@@ -13,6 +13,10 @@ on:
       scenario:
         description: 시나리오 파일
         default: scenarios/럭키즈_매일.yaml
+      check_only:
+        description: 폰 연결만 확인 (실행 안 함)
+        type: boolean
+        default: false
 
 concurrency: { group: luckyz, cancel-in-progress: false }
 
@@ -53,6 +57,7 @@ jobs:
           echo "::error::폰 조작 도구(WDA)에 연결 안 됨 — 폰 Tailscale 켜짐/재부팅 후 맥에서 한 번 연결했는지 확인"; exit 1
 
       - name: 실행
+        if: ${{ !inputs.check_only }}
         env:
           LUCKYZ_QUIET: '1'
           LUCKYZ_WDA_URL: ${{ secrets.LUCKYZ_WDA_URL }}
@@ -60,7 +65,7 @@ jobs:
         run: node run.mjs "${{ inputs.scenario || 'scenarios/럭키즈_매일.yaml' }}"
 
       - name: 결과 알림
-        if: always()
+        if: ${{ always() && !inputs.check_only }}
         env: { NTFY_TOPIC: '${{ secrets.NTFY_TOPIC }}' }
         run: |
           R=$(ls -t logs/report-*.txt 2>/dev/null | head -1)
