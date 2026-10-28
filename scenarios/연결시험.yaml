@@ -1,0 +1,8 @@
+# 클라우드 연결 시험: 럭키즈를 켜서 보유 코인·머니를 읽고 끝 (광고·코인 사용 없음)
+name: 연결 시험
+app: co.luckies.app
+continueOnError: true
+steps:
+  - balance: start
+  - screenshot: cloud_test
+  - balance: end
