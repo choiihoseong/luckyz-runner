@@ -1,0 +1,5 @@
+{
+  "device": "iphone",
+  "devices": { "iphone": { "real": true } },
+  "dailyScenario": "scenarios/럭키즈_매일.yaml"
+}

@@ -1,0 +1,76 @@
+# 럭키즈 클라우드 실행 — 폰(단축어 버튼)에서 시작
+#  GitHub 의 맥 서버가 Tailscale 로 폰에 붙어(폰은 어느 Wi-Fi·데이터든 OK) 시나리오를 돌림
+#  필요한 비밀값(Settings → Secrets → Actions):
+#   TS_AUTHKEY               Tailscale 임시(ephemeral) 인증 키
+#   LUCKYZ_WDA_URL           폰 조작 도구 주소  http://<폰 Tailscale IP>:8100
+#   CLAUDE_CODE_OAUTH_TOKEN  `claude setup-token` 으로 만든 토큰 (광고 버튼 판단용)
+#   NTFY_TOPIC (선택)        끝나면 폰으로 결과 알림 (ntfy 앱에서 같은 주제 구독)
+name: run
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 시나리오 파일
+        default: scenarios/럭키즈_매일.yaml
+
+concurrency: { group: luckyz, cancel-in-progress: false }
+
+jobs:
+  run:
+    runs-on: macos-15
+    env: { TZ: Asia/Seoul }   # 보고서 날짜를 한국 시간으로
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          hostname: luckyz-runner
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+
+      # 광고 학습·회차 기록은 실행 사이에 이어 씀 (저장소엔 안 올림)
+      - uses: actions/cache/restore@v4
+        with:
+          path: logs/
+          key: luckyz-logs-${{ github.run_id }}
+          restore-keys: luckyz-logs-
+
+      - name: 준비
+        run: |
+          npm ci --ignore-scripts
+          npm i -g @anthropic-ai/claude-code
+          python3 -m pip install --break-system-packages -q numpy pillow
+          mkdir -p bin && swiftc -O puzzles/ocr.swift -o bin/ocr
+
+      - name: 폰 연결 확인
+        env: { LUCKYZ_WDA_URL: '${{ secrets.LUCKYZ_WDA_URL }}' }
+        run: |
+          for i in 1 2 3 4 5 6; do curl -sf -m 10 "$LUCKYZ_WDA_URL/status" >/dev/null && { echo "폰 연결됨"; exit 0; }; sleep 10; done
+          echo "::error::폰 조작 도구(WDA)에 연결 안 됨 — 폰 Tailscale 켜짐/재부팅 후 맥에서 한 번 연결했는지 확인"; exit 1
+
+      - name: 실행
+        env:
+          LUCKYZ_QUIET: '1'
+          LUCKYZ_WDA_URL: ${{ secrets.LUCKYZ_WDA_URL }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: node run.mjs "${{ inputs.scenario || 'scenarios/럭키즈_매일.yaml' }}"
+
+      - name: 결과 알림
+        if: always()
+        env: { NTFY_TOPIC: '${{ secrets.NTFY_TOPIC }}' }
+        run: |
+          R=$(ls -t logs/report-*.txt 2>/dev/null | head -1)
+          MSG=$( [ -n "$R" ] && cat "$R" || tail -5 logs/run.log 2>/dev/null || echo "실행 기록 없음" )
+          [ -n "$NTFY_TOPIC" ] && curl -s -H "Title: 럭키즈 ${{ job.status }}" -d "$MSG" "https://ntfy.sh/$NTFY_TOPIC" >/dev/null || true
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: logs/
+          key: luckyz-logs-${{ github.run_id }}
+
+      # 공개 저장소라 실행 결과물(스크린샷 등)은 올리지 않음 — 보고는 위 요약·알림으로, 기록은 캐시에만

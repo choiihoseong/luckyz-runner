@@ -1,0 +1,185 @@
+# ─────────────────────────────────────────────────────────────
+# 럭키즈 매일 자동 실행 (22:00) — 받을 수 있는 코인·머니 전부
+#  1) 걸음 보상           2) 어제 놓친 걷기
+#  3) 미니 스도쿠·퀸즈·시카쿠 (일반 3판. 코인을 쓰는 머니 단계는 하지 않고 팝업 닫기)
+#  4) 보너스              5) 쿠팡 방문하기
+#  6) 미니 럭키또          7) 메가 럭키또          8) 오늘 획득 집계 보고
+#
+# 공통 규칙 (실패에서 배운 것)
+#  - 각 구간은 앱을 껐다 켜서 메인에서 시작 (이전 구간이 어디서 끝났든 상관없게)
+#  - 보상 화면: "N코인으로 불리기" 있으면 끝까지 불림 → 확인 → 홍보·구매 팝업은 글자형 '닫기'로만 닫음
+#    (머니 보상 팝업의 '닫기'는 버튼형이라 안 눌림)
+#  - 광고: X·>>·Skip·Close·다음 보기 즉시 탭, 안 보이면 Claude 화면 판단, 광고 아니면 즉시 빠짐
+#  - 사용자가 폰을 쓰면 멈춤 → 화면이 3분간 그대로면 재개 (최대 60분 대기 후 중단)
+#  - 한 구간이 실패해도 다음 구간과 보고는 계속 진행
+# ─────────────────────────────────────────────────────────────
+name: 럭키즈 전체 코인
+app: co.luckies.app
+resumeAfterIdleMin: 3
+maxPauseMin: 60
+continueOnError: true
+schedule:
+  enabled: true
+  at: ["22:00"]
+
+# 보상 화면에서 불리기 끝까지
+x-boost: &boost
+  repeat:
+    while: { contains: 불리기 }
+    max: 20
+    steps:
+      - tap: { contains: 불리기 }
+      - waitGone: { contains: 받았어요, timeout: 15 }
+      - adSkip: { app: co.luckies.app, until: [받았어요, 걸음 보상], timeout: 300 }
+      - wait: 1
+
+x-missed: &missed { text: "+1", below: { contains: 어제 놓친 걷기 }, within: 150, kind: Image }
+x-bonus: &bonusBtn { text: "+2", below: { contains: 보너스 }, within: 40, above: 30, kind: Image }
+x-coupang: &coupangBtn { text: "+1", below: { contains: 쿠팡 방문하기 }, within: 40, above: 30, kind: Image }
+# 반복 중 광고가 막히면 앱을 다시 띄워 해당 칸으로 돌아감 (retryOnError 와 함께)
+x-recoverBonus: &recoverBonus
+  - { close: co.luckies.app }
+  - { launch: co.luckies.app }
+  - { waitFor: { contains: 오늘 걸음 수, timeout: 25 } }
+  - scrollTo: { contains: 보너스, between: [150, 600], maxSwipes: 12 }
+x-mini: &mini { predicate: "label CONTAINS '미니 럭키또' AND label CONTAINS '긁기'" }
+x-mega: &mega { predicate: "label CONTAINS '메가 럭키또' AND label CONTAINS '긁기'" }
+
+steps:
+  - balance: start
+
+  # 1) 걸음 보상 — 버튼이 회색(비활성)이 되어 보상 화면이 안 뜨면 끝 (앱은 balance 에서 이미 새로 띄움)
+  - screenshot: start
+  - repeat:
+      while: { contains: 걸음 보상 }
+      max: 30
+      stopOnError: true
+      steps:
+        - tap: { contains: 걸음 보상 }
+        - waitFor: { contains: 받았어요, timeout: 10 }
+        - *boost
+        - ifExists: { text: 확인, timeout: 3 }
+        - ifExists: { text: 닫기, kind: StaticText, timeout: 2 }
+        - assert: { contains: 오늘 걸음 수, timeout: 10 }
+        - wait: 1
+
+  # 2) 어제 놓친 걷기 — 보라 +1 전부, 줄을 밀어 가려진 칸까지
+  - { close: co.luckies.app }
+  - { launch: co.luckies.app }
+  - { waitFor: { contains: 오늘 걸음 수, timeout: 25 } }
+  - scrollTo: { contains: 어제 놓친 걷기, between: [100, 450], maxSwipes: 8 }
+  - repeat:
+      max: 4
+      steps:
+        - repeat:
+            while: *missed
+            max: 15
+            stopOnError: true
+            steps:
+              - tap: *missed
+              - adSkip: { app: co.luckies.app, until: [받았어요, 어제 놓친 걷기], timeout: 300 }
+              - wait: 1
+              - *boost
+              - ifExists: { text: 확인, timeout: 3 }
+              - ifExists: { text: 닫기, kind: StaticText, timeout: 2 }
+              - scrollTo: { contains: 어제 놓친 걷기, between: [100, 450], maxSwipes: 8 }
+              - wait: 1
+        - swipe: { direction: left, at: { contains: 어제 놓친 걷기 }, offsetY: 105, distance: 0.7 }
+
+  # 3) 두뇌 트레이닝 — 퍼즐은 맥에서 직접 풀어 입력 (Claude 안 씀)
+  - game: { name: 미니 스도쿠, solver: sudoku, hardMax: 0 }
+  - game: { name: 미니 퀸즈, solver: queens, hardMax: 0 }
+  - game: { name: 미니 시카쿠, solver: shikaku, hardMax: 0 }
+
+  # 4) 보너스 — 광고 보고 2코인, 하루 5번
+  - { close: co.luckies.app }
+  - { launch: co.luckies.app }
+  - { waitFor: { contains: 오늘 걸음 수, timeout: 25 } }
+  - scrollTo: { contains: 보너스, between: [150, 600], maxSwipes: 12 }
+  - repeat:
+      while: *bonusBtn
+      max: 6
+      stopOnError: true
+      retryOnError: 2
+      recover: *recoverBonus
+      steps:
+        - tap: *bonusBtn
+        - adSkip: { app: co.luckies.app, until: [받았어요], timeout: 300 }
+        - wait: 1
+        - ifExists: { text: 확인, timeout: 3 }
+        - ifExists: { text: 닫기, kind: StaticText, timeout: 2 }
+        - wait: 1
+        - scrollTo: { contains: 보너스, between: [150, 600], maxSwipes: 12 }
+
+  # 5) 쿠팡 방문하기 — '5초 구경하고 1코인 받기' 버튼 → 쿠팡 페이지 8초 → 럭키즈 복귀 → 받았어요 확인 (쿠팡에서는 아무것도 안 누름)
+  - { close: co.luckies.app }
+  - { launch: co.luckies.app }
+  - { waitFor: { contains: 오늘 걸음 수, timeout: 25 } }
+  - scrollTo: { contains: 쿠팡 방문하기, between: [150, 600], maxSwipes: 12 }
+  - if:
+      exists: *coupangBtn
+      then:
+        - tap: *coupangBtn
+        - waitFor: { contains: 5초 구경하고, timeout: 10 }
+        - visitCoupang: true
+        - screenshot: coupang_done
+
+  # 6) 미니 럭키또 7) 메가 럭키또 — 칸 탭 → 광고 → 긁기 → 코인 받기, 각 하루 5번
+  - { close: co.luckies.app }
+  - { launch: co.luckies.app }
+  - { waitFor: { contains: 오늘 걸음 수, timeout: 25 } }
+  - scrollTo: { contains: 미니 럭키또, between: [150, 600], maxSwipes: 12 }
+  - repeat:
+      while: *mini
+      max: 6
+      stopOnError: true
+      retryOnError: 2
+      recover:
+        - { close: co.luckies.app }
+        - { launch: co.luckies.app }
+        - { waitFor: { contains: 오늘 걸음 수, timeout: 25 } }
+        - scrollTo: { contains: 미니 럭키또, between: [150, 600], maxSwipes: 12 }
+      steps:
+        - tap: { predicate: "label CONTAINS '미니 럭키또' AND label CONTAINS '긁기'", xFrac: 0.88 }
+        - waitFor: { contains: 행운숫자, timeout: 10 }
+        - scratchStart: true
+        - waitGone: { contains: 행운숫자, timeout: 10 }
+        - adSkip: { app: co.luckies.app, until: [행운숫자], timeout: 300 }
+        - wait: 1
+        - scratch: true
+        - waitFor: { contains: 당첨, timeout: 10 }
+        - ifExists: { text: 코인 받기, timeout: 3 }
+        - ifExists: { text: 확인, timeout: 3 }
+        - ifExists: { text: 닫기, kind: StaticText, timeout: 2 }
+        - wait: 1
+        - scrollTo: { contains: 미니 럭키또, between: [150, 600], maxSwipes: 12 }
+  - scrollTo: { contains: 메가 럭키또, between: [150, 600], maxSwipes: 12 }
+  - repeat:
+      while: *mega
+      max: 6
+      stopOnError: true
+      retryOnError: 2
+      recover:
+        - { close: co.luckies.app }
+        - { launch: co.luckies.app }
+        - { waitFor: { contains: 오늘 걸음 수, timeout: 25 } }
+        - scrollTo: { contains: 메가 럭키또, between: [150, 600], maxSwipes: 12 }
+      steps:
+        - tap: { predicate: "label CONTAINS '메가 럭키또' AND label CONTAINS '긁기'", xFrac: 0.88 }
+        - waitFor: { contains: 행운숫자, timeout: 10 }
+        - scratchStart: true
+        - waitGone: { contains: 행운숫자, timeout: 10 }
+        - adSkip: { app: co.luckies.app, until: [행운숫자], timeout: 300 }
+        - wait: 1
+        - scratch: true
+        - waitFor: { contains: 당첨, timeout: 10 }
+        - ifExists: { text: 코인 받기, timeout: 3 }
+        - ifExists: { text: 확인, timeout: 3 }
+        - ifExists: { text: 닫기, kind: StaticText, timeout: 2 }
+        - wait: 1
+        - scrollTo: { contains: 메가 럭키또, between: [150, 600], maxSwipes: 12 }
+  - screenshot: all_done
+
+  # 8) 오늘 획득 집계 → logs/report-날짜.txt + 맥 알림
+  - balance: end
+  - report: true

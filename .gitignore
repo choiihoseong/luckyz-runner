@@ -1,0 +1,8 @@
+node_modules/
+bin/
+config.json
+logs/*
+!logs/learned.json
+!logs/learned/
+__pycache__/
+.DS_Store

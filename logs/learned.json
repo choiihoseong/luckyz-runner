@@ -1,0 +1,109 @@
+{
+  "version": 2,
+  "networks": {
+    "Pangle": {
+      "spots": [
+        {
+          "x": 372,
+          "y": 91,
+          "ok": 1,
+          "fails": 0
+        }
+      ],
+      "delays": [
+        52,
+        1,
+        45,
+        47,
+        41
+      ]
+    },
+    "(이름없음)": {
+      "spots": [
+        {
+          "x": 282,
+          "y": 90,
+          "ok": 1,
+          "fails": 0
+        },
+        {
+          "x": 381,
+          "y": 73,
+          "ok": 1,
+          "fails": 0
+        }
+      ],
+      "delays": [
+        35,
+        23,
+        46,
+        26,
+        42
+      ]
+    },
+    "inneractive_video_player": {
+      "spots": [],
+      "delays": [
+        89,
+        79,
+        89,
+        105,
+        86
+      ]
+    }
+  },
+  "templates": [
+    {
+      "file": "1792217383412.png",
+      "network": "(이름없음)",
+      "ok": 3,
+      "fails": 0
+    },
+    {
+      "file": "1792371755133.png",
+      "network": "Pangle",
+      "ok": 1,
+      "fails": 0
+    },
+    {
+      "file": "1792371779032.png",
+      "network": "Pangle",
+      "ok": 36,
+      "fails": 0
+    },
+    {
+      "file": "1792373305402.png",
+      "network": "Pangle",
+      "ok": 5,
+      "fails": 0
+    },
+    {
+      "file": "1793150589139.png",
+      "network": "Pangle",
+      "ok": 1,
+      "fails": 0
+    },
+    {
+      "file": "1793150657640.png",
+      "network": "(이름없음)",
+      "ok": 1,
+      "fails": 0
+    },
+    {
+      "file": "1793150731077.png",
+      "network": "Pangle",
+      "ok": 1,
+      "fails": 0
+    },
+    {
+      "file": "1793151349504.png",
+      "network": "Pangle",
+      "ok": 1,
+      "fails": 0
+    }
+  ],
+  "noop": {
+    "*|20,80": 2,
+    "*|20,70": 2
+  }
+}
