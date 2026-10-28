@@ -64,6 +64,11 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: node run.mjs "${{ inputs.scenario || 'scenarios/럭키즈_매일.yaml' }}"
 
+      - name: 결과 요약
+        if: ${{ always() && !inputs.check_only }}
+        # 공개 저장소: 화면 내용은 숨기고 보유량·성공/실패 줄만 보여 줌
+        run: grep -E "보유 코인|✗|✔|⏱|이번 실행 획득" logs/run.log 2>/dev/null | sed -E 's/^\[[^]]*\] *//' | tail -40 || true
+
       - name: 결과 알림
         if: ${{ always() && !inputs.check_only }}
         env: { NTFY_TOPIC: '${{ secrets.NTFY_TOPIC }}' }
