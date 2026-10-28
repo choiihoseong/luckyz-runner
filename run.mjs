@@ -83,6 +83,8 @@ async function shot(drv, name) {
 const CLOSE_RE = /close|skip|dismiss|닫기|건너뛰|×|✕|✖|^x$|»|>>|›|cancel/i;
 // 화면 어디에 있든 누를 수 있는 '진행' 문구 (짧은 버튼 글자만), 절대 누르지 않을 문구
 const PROGRESS_RE = /^(다음\s*보기|다음\s*광고|다음|계속(하기)?|건너뛰기|광고\s*건너뛰기|skip(\s*ad)?|next|continue|보상\s*받기|리워드\s*받기)\s*[>›»]*$/i;
+// 럭키즈 자체 화면에만 있는 글자 (광고 화면엔 없음)
+const APP_UI_RE = /게임 방법|오늘 걸음 수|게임에서 나가시겠어요/;
 // 보상 지급이 끝났다는 광고 표시 (이게 보이면 닫기가 정답)
 const REWARD_DONE_RE = /리워드\s*지급|보상\s*지급|보상이\s*지급|reward\s*(granted|earned|received)/i;
 const BLOCK_RE = /설치|install|download|다운|구매|열기|^open|play\s*now|자세히|자세한|learn\s*more|더\s*알아보기|시작하려면|지금|shop|buy|get\s*it|바로가기/i;
@@ -262,6 +264,13 @@ async function adSkip(drv, o) {
       else if (age >= 12000) reject();
     }
 
+    // 0) 광고가 끝나 앱 화면으로 돌아왔는데 아직 until 글자가 안 잡힌 순간: 뒤로가기를 눌러 '게임에서 나가시겠어요?' 가 뜨면 '계속 풀기'
+    if (/<XCUIElementType\w+[^>]*(?:label|name)="게임에서 나가시겠어요[^"]*"[^>]*visible="true"/.test(xml)) {
+      const keep = await drv.$$(`-ios predicate string:label == '계속 풀기' OR name == '계속 풀기'`).catch(() => []);
+      if (keep[0]) { log("    → '게임에서 나가시겠어요?' 확인창 → '계속 풀기'"); await keep[0].click().catch(() => {}); lastProgress = Date.now(); await sleep(1500); continue; }
+    }
+    const appScreen = [...xml.matchAll(/<XCUIElementType\w+([^>]*?)\/?>/g)].some(([, a]) => attr(a, 'visible') === 'true' && APP_UI_RE.test(attr(a, 'label') || attr(a, 'name') || ''));   // 럭키즈 자체 화면이면 이름 없는 버튼(뒤로가기 등)은 광고 닫기가 아님
+
     // 1) 글자로 잡히는 닫기·건너뛰기·다음 보기
     const cands = [];
     // 같은 버튼 재탭 허용: 한도에 걸려도 8초 지나면 다시 (광고 끝나기 전에 미리 눌러 한도를 다 써버리는 경우 대비), 총 12번까지
@@ -283,7 +292,7 @@ async function adSkip(drv, o) {
       if (!(w > 0 && h > 0 && w <= 120 && h <= 80 && y < 170)) continue;
       if (!(x < 100 || x + w > W - 100)) continue;
       const named = CLOSE_RE.test(txt) || txt.split(/\s+/).some(t => CLOSE_RE.test(t));
-      if (!named && (m[1] !== 'Button' || txt)) continue;
+      if (!named && (m[1] !== 'Button' || txt || appScreen)) continue;
       if (!named && !(w <= 50 && (x < 45 || x + w > W - 45))) continue;
       if (!named) { const sx = Math.round((x + w / 2) / 10) * 10, sy = Math.round((y + h / 2) / 10) * 10;
         if ((L.noop[`${network ?? '*'}|${sx},${sy}`] ?? 0) >= 2 || (L.noop[`*|${sx},${sy}`] ?? 0) >= 2) continue; }
@@ -626,26 +635,40 @@ async function runStep(drv, step, i) {
       const app = TARGET_APP, solver = { [o.solver]: true };
       const run = async (list) => { for (const [j, sub] of list.entries()) await runStep(drv, sub, j); };
       const toMain = [{ close: app }, { launch: app }, { waitFor: { contains: '오늘 걸음 수', timeout: 20 } }];
-      await run([...toMain, { scrollTo: { contains: o.name, between: [150, 600], maxSwipes: 12 } }]);
-      let opened = false;
-      const plus = { text: '+1', below: { contains: o.name }, within: 40, above: 30, kind: 'Image' };
-      try { await find(drv, plus, 3000); opened = true; } catch {}
-      // 10-19: 버튼이 활성인데 못 찾고 건너뜀 → 앱을 다시 열어 한 번 더 찾고, 그래도 없으면 증거 스크린샷
-      if (!opened) {
-        await run([...toMain, { scrollTo: { contains: o.name, between: [200, 550], maxSwipes: 12 } }]);
-        try { await find(drv, plus, 6000); opened = true; } catch {}
-      }
-      if (!opened) { await shot(drv, `game_${o.solver}_none`).catch(() => {}); log(`    → ${o.name}: 받을 +1 없음 (오늘 완료)`); break; }
-      await run([{ tap: { text: '+1', below: { contains: o.name }, within: 40, above: 30, kind: 'Image' } }, { wait: 2 }]);
+      // 받을 판 버튼: 보통 '+1' 이지만 일부 진행 뒤엔 남은 보상 합계('+3' 등)로 바뀜 → '+숫자' 전부 (10-28: '+3' 을 못 알아봐 한 판씩 남김)
+      const plus = { predicate: "label BEGINSWITH '+'", below: { contains: o.name }, within: 40, above: 30, kind: 'Image' };
       const after = [
         { waitFor: { contains: '받았어요', timeout: 25 } },
-        { ifExists: { text: '확인', timeout: 3 } },
+        { ifExists: { text: '확인', timeout: 6 } },   // 보상 팝업이 늦게 떠서 3초로는 놓친 적 있음(10-21)
         { ifExists: { text: '닫기', kind: 'StaticText', timeout: 2 } },   // 구매·홍보 팝업 (머니 보상 팝업의 닫기는 Button 이라 제외)
         { wait: 1 },
       ];
-      await run([{ repeat: { while: { contains: '코인 받기 (' }, max: 5, stopOnError: true, steps: [
-        { tap: { contains: '코인 받기 (' } },
-        { adSkip: { app, until: ['되돌리기'], timeout: 300 } }, { wait: 1 }, solver, ...after ] } }]);
+      // 판 사이 화면이 늦게 뜨면 반복이 일찍 끝나 한 판이 남는 일이 있음(10-21·10-28)
+      //  → 반복이 끝나면 메인으로 돌아가 +1 이 아직 있는지 다시 보고, 있으면 이어서 (최대 3번)
+      let played = 0;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await run([...toMain, { scrollTo: { contains: o.name, between: [150, 600], maxSwipes: 12 } }]);
+        let opened = false;
+        try { await find(drv, plus, 3000); opened = true; } catch {}
+        // 10-19: 버튼이 활성인데 못 찾고 건너뜀 → 앱을 다시 열어 한 번 더 찾고, 그래도 없으면 증거 스크린샷
+        if (!opened && attempt === 0) {
+          await run([...toMain, { scrollTo: { contains: o.name, between: [200, 550], maxSwipes: 12 } }]);
+          try { await find(drv, plus, 6000); opened = true; } catch {}
+        }
+        if (!opened) {
+          if (attempt === 0) { await shot(drv, `game_${o.solver}_none`).catch(() => {}); log(`    → ${o.name}: 받을 +1 없음 (오늘 완료)`); }
+          else log(`    → ${o.name}: 남은 판 없음 확인`);
+          break;
+        }
+        if (attempt > 0) log(`    → ${o.name}: 아직 남은 판이 있어 이어서 진행 (${attempt}번째 재확인)`);
+        await run([{ tap: plus }, { wait: 2 }]);
+        await run([{ repeat: { while: { contains: '코인 받기 (' }, max: 5, stopOnError: true, steps: [
+          { tap: { contains: '코인 받기 (' } },
+          { adSkip: { app, until: ['되돌리기'], timeout: 300 } }, { wait: 1 }, solver, ...after ] } }]);
+        played++;
+        if ((o.hardMax ?? 0) > 0) break;   // 머니 단계는 이 화면에서 바로 이어 감
+      }
+      if (!played) break;
       if ((o.hardMax ?? 0) > 0) {
         await run([{ if: { exists: { contains: '지금 바로 시작하기' }, timeout: 4, then: [{ tap: '지금 바로 시작하기' }, { wait: 3 }] } }]);
         await run([{ repeat: { while: { contains: '머니 룰렛' }, max: o.hardMax ?? 3, stopOnError: true, steps: [
